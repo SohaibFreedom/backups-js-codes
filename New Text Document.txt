@@ -1,0 +1,982 @@
+;(async () => {
+    // Your existing functions and code...
+
+    async function insertHtmlBeforeSearchBox() {
+        const searchBox = document.querySelector('#searchbox');
+        const existingHeading = document.querySelector('.page-heading');
+        
+        if (searchBox) {
+            if (existingHeading) {
+                console.log('Existing heading found:', existingHeading.textContent.trim());
+                
+                if (existingHeading.textContent.trim() === 'Caps & Dampers') {
+                    const bannerArea = document.createElement('div');
+                    bannerArea.className = 'category-banner-area';
+                    bannerArea.innerHTML = `
+                        <div class="category-banner-holder">
+                            <div class="category-caption">
+                                <h1>Need a Custom Cap or Chase Cover?</h1>
+                                <strong class="title">We’ve Got a Solution for That!</strong>
+                                <p>Visit our custom calculators to order just what your job calls for!</p>
+                                <span class="category-button-holder">
+                                    <a class="btn btn-primary" href="#">Custom Ordering</a>
+                                </span>
+                            </div>
+                            <div class="image-holder">
+                                <img src="https://cdn11.bigcommerce.com/s-dea51z7cy/images/stencil/original/image-manager/camp-banner.png" alt="image-description">
+                            </div>
+                        </div>
+                    `;
+                    searchBox.parentNode.insertBefore(bannerArea, searchBox);
+                    console.log('Banner added for Caps & Dampers');
+                }
+
+                searchBox.parentNode.insertBefore(existingHeading, searchBox);
+                console.log('Existing heading moved');
+
+                if (existingHeading.textContent.trim() === 'Dryer Vent') {
+                    const buttonLink = document.createElement('div');
+                    buttonLink.className = 'buttonLink';
+                    buttonLink.setAttribute('role', 'button');
+                    buttonLink.innerHTML = `
+                        <a href="https://store-dea51z7cy.mybigcommerce.com/content/Dryer%20Vent%20Info%20Sheet.pdf" target="_top" id="sd-simple-button-editable-cbf65bdf-0205-4f00-bded-b9d3083baf87" data-edit-mode="">
+                            Dryer Vent Information
+                        </a>
+                    `;
+                    existingHeading.insertAdjacentElement('afterend', buttonLink);
+                    console.log('Button link added for Dryer Vent');
+                }
+            } else {
+                console.log('No existing heading found');
+            }
+        }
+    }
+
+    function appendSidebarWidgetOpener() {
+        const panelHeaders = document.querySelectorAll('.ais-Panel-header');
+        panelHeaders.forEach(header => {
+            if (!header.querySelector('.sidebar-widget-opener')) {
+                const link = document.createElement('a');
+                link.href = 'javascript:void(0);';
+                link.className = 'sidebar-widget-opener';
+                header.appendChild(link);
+
+                link.addEventListener('click', () => {
+                    const panel = link.closest('.ais-Panel');
+                    if (panel) {
+                        panel.classList.toggle('active');
+                    }
+                });
+            }
+        });
+    }
+
+    function addActiveClassToBrandOrPricePanel() {
+        const facetTitles = document.querySelectorAll('.ais-facet-title');
+        facetTitles.forEach(title => {
+            const text = title.textContent.trim().toLowerCase();
+            if (text === 'brand' || text === 'price') {
+                const panel = title.closest('.ais-Panel');
+                if (panel) {
+                    panel.classList.add('active');
+                }
+            }
+        });
+    }
+
+    async function fetchCategoryById() {
+        const query = `query categoryById($categoryId: Int!) {
+            site {
+            category(entityId: $categoryId) {
+                metafields(
+                namespace: "algolia_bigcommerce"
+                keys: ["instantsearch_category_facets"]
+                ) {
+                edges {
+                    node {
+                    key
+                    value
+                    }
+                }
+                }
+            }
+            }
+        }`
+
+        try {
+            const bodyRequest = JSON.stringify({
+                query: query,
+                variables: { categoryId: parseInt(category_id) },
+            })
+
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${storefront_token}`,
+                },
+                body: bodyRequest,
+            })
+
+            const jsonResponse = await response.json()
+            const edgeValue = jsonResponse.data.site.category.metafields.edges[0]?.node.value
+
+            return edgeValue
+        } catch (error) {
+            console.error('Unable to fetch category metafields for InstantSearch facets', error)
+        }
+    }
+
+    async function fetchParentCategoryBreadcrumbs() {
+        if (typeof category_id === 'undefined' || category_id === '') {
+            return []
+        }
+
+        const query = `query {
+            site {
+                category(entityId: ${category_id}) {
+                    id
+                name
+                description
+                breadcrumbs(depth: 8) {
+                edges {
+                    node {
+                    ... on Breadcrumb {
+                        name
+                        path
+                    }
+                    }
+                }
+                }
+            }
+            }
+        }`
+
+        try {
+            const response = await fetch('/graphql', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${storefront_token}`,
+                },
+                body: JSON.stringify({
+                    query: query,
+                }),
+            })
+
+            if (response.status !== 200) {
+                return []
+            }
+
+            const jsonResponse = await response.json()
+            return jsonResponse.data.site.category.breadcrumbs.edges ?? []
+        } catch (error) {
+            console.error('Unable to fetch category metafields for InstantSearch facets', error)
+            return []
+        }
+    }
+
+    function getIsLocale(currencyCode) {
+        let locale
+        switch (currencyCode.toLowerCase()) {
+            case 'eur':
+                locale = 'de-DE'
+                break
+
+            case 'gbp':
+                locale = 'en-GB'
+                break
+
+            case 'afn':
+                locale = 'af-AF'
+                break
+
+            case 'usd':
+            default:
+                locale = 'en-US'
+                break
+        }
+
+        return locale
+    }
+
+    function formatIsPrice(priceList, currencyCode) {
+        let price
+        if (currencyCode in priceList) {
+            price = priceList[currencyCode]
+        } else {
+            price = Object.values(priceList)[0]
+        }
+
+        return new Intl.NumberFormat(getIsLocale(currencyCode), {
+            style: 'currency',
+            currency: currencyCode,
+        }).format(price)
+    }
+
+    function formatIsPriceRangePrice(value, compare, locale, currencyCode) {
+        let price
+        if (value === 0 && compare === 0) {
+            return null
+        } else if (value === 0 && compare > 0) {
+            price = compare
+        } else {
+            price = value
+        }
+
+        return new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: currencyCode,
+        }).format(price)
+    }
+
+    function formatIsPriceRange(products, currencyCode) {
+        let min = 0
+        let max = 0
+
+        for (const key in products) {
+            const currencyValue = (products[key].prices && products[key].prices[currencyCode]) || 0
+
+            if (min === 0 || currencyValue < min) {
+                min = currencyValue
+            }
+            if (max === 0 || currencyValue > max) {
+                max = currencyValue
+            }
+        }
+
+        const locale = getIsLocale(currencyCode)
+        return {
+            min: formatIsPriceRangePrice(min, max, locale, currencyCode),
+            max: formatIsPriceRangePrice(max, min, locale, currencyCode),
+        }
+    }
+
+    let categoryFacetsGlobal = []
+
+    const isCategoryPage =
+        typeof page_type !== 'undefined' &&
+        page_type == 'category' &&
+        category_id !== '' &&
+        algoliaCategoryConfig.category_ids[category_id].isEnabled
+    const parentBreadCrumbs = await fetchParentCategoryBreadcrumbs()
+    const instantsearchClient = algoliasearch(
+        algoliaInstantsearchConfig.appId,
+        algoliaInstantsearchConfig.publicApiKey
+    )
+    instantsearchClient.initIndex(algoliaInstantsearchConfig.indexName)
+    instantsearchClient.addAlgoliaAgent('BigCommerce Integration')
+
+    const initInstantsearch = {
+        indexName: algoliaInstantsearchConfig.indexName,
+        searchClient: instantsearchClient,
+        queryParameter: 'search_query',
+        routing: true,
+        searchFunction: function (helper) {
+            const params = new URLSearchParams(window.location.search)
+            const searchBoxValue = document.querySelector(
+                '.ais-right-panel .ais-SearchBox .ais-SearchBox-input'
+            ).value
+            const queryParamValue = params.get('search_query')
+            const page = helper.getPage()
+            if (searchBoxValue && queryParamValue !== searchBoxValue) {
+                helper.setQuery(searchBoxValue).setPage(page).search()
+            } else if (queryParamValue && queryParamValue !== searchBoxValue) {
+                helper.setQuery(queryParamValue).setPage(page).search()
+            } else {
+                helper.setQuery(searchBoxValue).setPage(page).search()
+            }
+        },
+        insights: algoliaInstantsearchConfig.isInsightsEnabled ? true : false,
+        initialUiState: {},
+    }
+
+    const doesCategoryFacetExist = function () {
+        if (!isCategoryPage) {
+            return false
+        }
+        const facets =
+            categoryFacetsGlobal.length !== 0
+                ? categoryFacetsGlobal
+                : algoliaInstantsearchConfig.facets
+        for (const facet of facets) {
+            if (facet.type === 'hierarchical_menu') {
+                return true
+            }
+        }
+        return false
+    }
+
+    const shouldWeUpdateUiState = async function () {
+        if (!doesCategoryFacetExist()) {
+            return
+        }
+        let crumbs = []
+        for (const breadcrumb of parentBreadCrumbs) {
+            crumbs.push(breadcrumb.node.name)
+        }
+
+        initInstantsearch.initialUiState = {
+            [algoliaInstantsearchConfig.indexName]: {
+                hierarchicalMenu: {
+                    'categories.lvl0': crumbs || 'Products',
+                },
+            },
+        }
+    }
+
+    const findObjectByLabel = (data, labelToFind) => {
+        for (const item of data) {
+            if (item.label === labelToFind) {
+                return item
+            }
+
+            if (item.data && Array.isArray(item.data)) {
+                const result = findObjectByLabel(item.data, labelToFind)
+                if (result) {
+                    return result
+                }
+            }
+        }
+
+        return null
+    }
+
+    let search
+
+    const { refinementList, rangeSlider, rangeInput, hierarchicalMenu, panel, clearRefinements } =
+        instantsearch.widgets
+    const { connectDynamicWidgets, connectCurrentRefinements } = instantsearch.connectors
+
+    const hasFacetValues = function (resultState, facetName) {
+        const isFacetValueAvailable = resultState.facets.some(function (facet) {
+            return facet.name === facetName
+        })
+        const isDisjunctiveFacetValueAvailable = resultState.disjunctiveFacets.some(function (
+            facet
+        ) {
+            return facet.name === facetName
+        })
+        const isHierarchicalFacetValueAvailable = resultState.hierarchicalFacets.some(function (
+            facet
+        ) {
+            return facet.name === facetName
+        })
+
+        return (
+            isFacetValueAvailable ||
+            isDisjunctiveFacetValueAvailable ||
+            isHierarchicalFacetValueAvailable
+        )
+    }
+
+    const widgets = []
+    const secondaryWidgets = []
+    async function createWidgetForFacet(facet) {
+        const crumbs = []
+        let parentCrumbs = []
+        if (isCategoryPage) {
+            parentCrumbs = parentBreadCrumbs
+        }
+
+        for (const crumb of parentCrumbs) {
+            crumbs.push(crumb.node.name)
+        }
+
+        switch (facet.type) {
+            case 'slider':
+                const sliderPanel = panel({
+                    hidden(options) {
+                        return !hasFacetValues(options.results, facet.attribute)
+                    },
+                    templates: {
+                        header(options, { html }) {
+                            if (options.results) {
+                                return html`<div class="ais-facet-title">${facet.title}</div>`
+                            }
+                        },
+                    },
+                    container: document.createElement('div'),
+                })(rangeSlider)
+
+                widgets[facet.attribute] = {
+                    widget: (container) => sliderPanel({ attribute: facet.attribute, container }),
+                    container: document.createElement('div'),
+                }
+                break
+
+            case 'input':
+                const inputPanel = panel({
+                    hidden(options) {
+                        return !hasFacetValues(options.results, facet.attribute)
+                    },
+                    templates: {
+                        header(options, { html }) {
+                            if (options.results) {
+                                return html`<div class="ais-facet-title">${facet.title}</div>`
+                            }
+                        },
+                    },
+                    container: document.createElement('div'),
+                })(rangeInput)
+
+                widgets[facet.attribute] = {
+                    widget: (container) =>
+                        inputPanel({
+                            attribute: facet.attribute,
+                            container,
+                        }),
+                    container: document.createElement('div'),
+                }
+                break
+
+            case 'slider_range_combo':
+                const sliderComboPanel = panel({
+                    hidden(options) {
+                        return !hasFacetValues(options.results, facet.attribute)
+                    },
+                    templates: {
+                        header(options, { html }) {
+                            if (options.results) {
+                                return html`<div class="ais-facet-title">${facet.title}</div>`
+                            }
+                        },
+                    },
+                    container: document.createElement('div'),
+                })(rangeSlider)
+
+                widgets[facet.attribute] = {
+                    widget: (container) =>
+                        sliderComboPanel({ attribute: facet.attribute, container }),
+                    container: document.createElement('div'),
+                }
+
+                secondaryWidgets[facet.attribute] = {
+                    widget: (container) =>
+                        rangeInput({
+                            attribute: facet.attribute,
+                            container,
+                        }),
+                    container: document.createElement('div'),
+                }
+
+                break
+
+            case 'disjunctive':
+            case 'conjunctive':
+                const listPanel = panel({
+                    hidden(options) {
+                        return !hasFacetValues(options.results, facet.attribute)
+                    },
+                    templates: {
+                        header(options, { html }) {
+                            if (options.results) {
+                                return html`<div class="ais-facet-title">${facet.title}</div>`
+                            }
+                        },
+                    },
+                    container: document.createElement('div'),
+                })(refinementList)
+
+                widgets[facet.attribute] = {
+                    widget: (container) =>
+                        listPanel({
+                            attribute: facet.attribute,
+                            container: container,
+                            operator: facet.type === 'disjunctive' ? 'or' : 'and',
+                            searchable: facet.searchable ?? false,
+                            limit: algoliaInstantsearchConfig.facetOptionLimit,
+                            showMore: true,
+                            showMoreText: 'Show More',
+                        }),
+                    container: document.createElement('div'),
+                }
+                break
+
+            case 'hierarchical_menu':
+                const hierarchicalMenuPanel = panel({
+                    templates: {
+                        header(options) {
+                            if (options.results) {
+                                return `<div class="ais-facet-title">${facet.title}</div>`
+                            }
+                        },
+                    },
+                    hidden({ items }) {
+                        return items.length === 0
+                    },
+                    container: document.createElement('div'),
+                })(hierarchicalMenu)
+                widgets[facet.attribute] = {
+                    widget: (container) =>
+                        hierarchicalMenuPanel({
+                            container,
+                            attributes: [
+                                'categories.lvl0',
+                                'categories.lvl1',
+                                'categories.lvl2',
+                                'categories.lvl3',
+                                'categories.lvl4',
+                                'categories.lvl5',
+                                'categories.lvl6',
+                                'categories.lvl7',
+                            ],
+                            separator: ' > ',
+                            rootPath: crumbs.join(' > ') || 'Products', // add default to fix main search page
+                            transformItems(items) {
+                                return items.map((item) => ({
+                                    ...item,
+                                    label: item.label,
+                                }))
+                            },
+                        }),
+                    container: document.createElement('div'),
+                }
+                break
+        }
+    }
+    async function loadDefaultFacets() {
+        for (const facet of algoliaInstantsearchConfig.facets) {
+            await createWidgetForFacet(facet)
+        }
+    }
+
+    async function loadCategoryFacets() {
+        const categoryFacets = await fetchCategoryById()
+        if (categoryFacets) {
+            categoryFacetsGlobal = JSON.parse(categoryFacets)
+        }
+        if (categoryFacetsGlobal.length === 0) {
+            await loadDefaultFacets()
+            return
+        }
+
+        for (const facet of categoryFacetsGlobal) {
+            await createWidgetForFacet(facet)
+        }
+    }
+
+    async function shouldWeLoadFacets() {
+        if (isCategoryPage) {
+            await loadCategoryFacets()
+        } else {
+            await loadDefaultFacets()
+        }
+    }
+
+    const renderDynamicWidgets = (renderOptions, isFirstRender) => {
+        let { attributesToRender, widgetParams } = renderOptions
+        if (isFirstRender) {
+            const div = document.createElement('div')
+            div.classList.add('aisCustom-navContainer')
+            widgetParams.container.appendChild(div)
+
+            const ul = document.createElement('ul')
+            ul.classList.add('ais-FacetList')
+            widgetParams.container.appendChild(ul)
+
+        }
+
+        const div = widgetParams.container.querySelector('div')
+        div.innerHTML = '<a href="javascript:void(0)" role="button" class="aisCustom-toggle aisCustom-toggleLink" onclick="aisFunction()"><span class="aisCustom-toggle-text">Browse by Category, Brand &amp; more</span><span class="aisCustom-toggle-indicator"><span class="aisCustom-toggleLink-text-show">Show Filters</span><i class="icon" aria-hidden="true"><svg><use xlink:href="#icon-keyboard-arrow-down"></use></svg></i></span></a>'
+
+        const ul = widgetParams.container.querySelector('ul')
+        ul.innerHTML = ''
+
+        if (isCategoryPage && categoryFacetsGlobal.length !== 0) {
+            attributesToRender = categoryFacetsGlobal.map((facet) => facet.attribute)
+        }
+
+        attributesToRender.forEach((attribute) => {
+            if (!widgets[attribute]) {
+                return
+            }
+            // console.log(attribute);
+            const facetContainer = widgets[attribute].container
+            ul.appendChild(facetContainer)
+        })
+    }
+
+    const customDynamicWidgets = connectDynamicWidgets(renderDynamicWidgets)
+
+    const renderSecondaryWidgets = (renderOptions) => {
+        const { attributesToRender } = renderOptions
+        // console.log(attributesToRender);
+        attributesToRender.forEach((attribute) => {
+            if (!secondaryWidgets[attribute]) {
+                return
+            }
+
+            const container = widgets[attribute].container.querySelector(
+                '.ais-Panel .ais-Panel-body'
+            )
+            if (!container) {
+                return
+            }
+
+            const facetContainer = secondaryWidgets[attribute].container
+            container.appendChild(facetContainer)
+        })
+    }
+    const customSecondaryWidgets = connectDynamicWidgets(renderSecondaryWidgets)
+
+    const createDataAttribtues = (refinement) =>
+        Object.keys(refinement)
+            .map((key) => `data-${key}="${refinement[key]}"`)
+            .join(' ')
+
+    const getFacetName = (label) => {
+        let facet
+        if (isCategoryPage && categoryFacetsGlobal.length !== 0) {
+            facet = categoryFacetsGlobal.find((categoryFacet) => {
+                return categoryFacet.attribute === label
+            })
+        } else {
+            facet = algoliaInstantsearchConfig.facets.find((configFacet) => {
+                if (
+                    configFacet.attribute === 'categories' &&
+                    label.split('.')[0] === 'categories'
+                ) {
+                    return true
+                }
+                if (configFacet.attribute === label) {
+                    return true
+                }
+                return false
+            })
+        }
+
+        return facet ? facet.title : ''
+    }
+
+    const renderListItem = (item) => `
+            ${item.refinements
+                .map(
+                    (refinement) =>
+                        `
+                        <li class="ais-CurrentRefinements-item">
+                            <span class="ais-CurrentRefinements-category">
+                                <span class="ais-CurrentRefinements-label">${getFacetName(
+                                    item.label
+                                )}:</span>
+                                <span class="ais-CurrentRefinements-categoryLabel">&nbsp;${
+                                    refinement.label
+                                }</span>
+                            </span>
+                            <button class="ais-CurrentRefinements-delete" ${createDataAttribtues(
+                                refinement
+                            )}>x</button>
+                        </li>
+                    `
+                )
+                .join('')}
+        `
+
+    const renderCurrentRefinements = (renderOptions) => {
+        const { items, refine, widgetParams } = renderOptions
+        widgetParams.container.innerHTML = `
+            <ul class="ais-CurrentRefinements-list">
+                ${items.map(renderListItem).join('')}
+            </ul>
+        `
+        ;[...widgetParams.container.querySelectorAll('button')].forEach((element) => {
+            element.addEventListener('click', (event) => {
+                const item = Object.keys(event.currentTarget.dataset).reduce(
+                    (acc, key) => ({
+                        ...acc,
+                        [key]: event.currentTarget.dataset[key],
+                    }),
+                    {}
+                )
+                refine(item)
+            })
+        })
+    }
+
+    const customCurrentRefinements = connectCurrentRefinements(renderCurrentRefinements)
+
+    const instantsearchFilters = []
+    if (!algoliaInstantsearchConfig.showOutOfStockItems) {
+        instantsearchFilters.push('in_stock>0')
+    }
+
+    if (typeof page_type !== 'undefined' && page_type === 'category') {
+        instantsearchFilters.push(
+            `categories_without_path:"${algoliaCategoryConfig.category_ids[category_id].name}"`
+        )
+    }
+
+    function addInstantsearchWidgets() {
+        search.addWidgets([
+            instantsearch.widgets.searchBox({
+                container: '#searchbox',
+                placeholder: 'Search...',
+                searchAsYouType: true,
+            }),
+
+            instantsearch.widgets.infiniteHits({
+                container: '#infinite-hits',
+                templates: {
+                    item(hit, { html }) {
+                        let price
+                        const customerEmail = document.getElementById('CustomerEmail').value;
+                        const retailsPrices = hit.retail_prices.USD;
+
+                        if (algoliaInstantsearchConfig.recordType === 'variant') {
+                            addToCartParam = `sku=${hit.sku}`
+                            price = formatIsPrice(
+                                hit.prices,
+                                algoliaInstantsearchConfig.currentCurrencyCode
+                            )
+                        } else if (algoliaInstantsearchConfig.recordType === 'product') {
+                            addToCartParam = `product_id=${hit.objectID}`
+                            const priceRange = formatIsPriceRange(
+                                hit.variants,
+                                algoliaInstantsearchConfig.currentCurrencyCode
+                            )
+
+                            if (priceRange.min === null && priceRange.max === null) {
+                                price = `View For Pricing`
+                            } else if (priceRange.min !== priceRange.max) {
+                                price = `${priceRange.min} - ${priceRange.max}`
+                            } else {
+                                price = priceRange.min
+                            }
+                        }
+                        if(customerEmail.trim()){
+                            if(retailsPrices){
+                                if(hit.image_url){
+                                    return html`
+                                    <a class="ais-hit-details" href="${hit.url}">
+                                        <div class="ais-hit-image">
+                                            <img src="${hit.image_url}" align="left" alt="${hit.name}" />
+                                        </div>
+                                        <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                        <div class="ais-hit-title product-title">${hit.name}</div>
+                                    </a>
+                                    <div class="ais-hit-price">${price}</div>
+                                    <div class="ais-hit-price msrp-price">MSRP: <s>$${retailsPrices}</s></div>
+                                `
+                                }else{
+                                    return html`
+                                    <a class="ais-hit-details" href="${hit.url}">
+                                        <div class="ais-hit-image">
+                                            <img src="https://cdn11.bigcommerce.com/s-dea51z7cy/images/stencil/original/image-manager/product-default.png" align="left" alt="${hit.name}" />
+                                        </div>
+                                        <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                        <div class="ais-hit-title product-title">${hit.name}</div>
+                                    </a>
+                                    <div class="ais-hit-price">${price}</div>
+                                    <div class="ais-hit-price msrp-price">MSRP: <s>$${retailsPrices}</s></div>
+                                `
+                                }
+                                
+                            }else{
+                                if(hit.image_url){
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="${hit.image_url}" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <div class="ais-hit-price">${price}</div>
+                                    `
+                                }else{
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="https://cdn11.bigcommerce.com/s-dea51z7cy/images/stencil/original/image-manager/product-default.png" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <div class="ais-hit-price">${price}</div>
+                                    `
+                                }
+                            }
+                            
+                        }else{
+                            if(retailsPrices){
+                                if(hit.image_url){
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="${hit.image_url}" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <div class="ais-hit-price msrp-price">MSRP: $${retailsPrices}</div>
+                                        <a
+                                            class="aa-ItemActionButton"
+                                            href="/login.php"
+                                        >
+                                            Login to purchase
+                                        </a>
+                                    `
+                                }else{
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="https://cdn11.bigcommerce.com/s-dea51z7cy/images/stencil/original/image-manager/product-default.png" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <div class="ais-hit-price msrp-price">MSRP: $${retailsPrices}</div>
+                                        <a
+                                            class="aa-ItemActionButton"
+                                            href="/login.php"
+                                        >
+                                            Login to purchase
+                                        </a>
+                                    `
+                                }
+                            }else{
+                                if(hit.image_url){
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="${hit.image_url}" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <a
+                                            class="aa-ItemActionButton"
+                                            href="/login.php"
+                                        >
+                                            Login to purchase
+                                        </a>
+                                    `
+                                }else{
+                                    return html`
+                                        <a class="ais-hit-details" href="${hit.url}">
+                                            <div class="ais-hit-image">
+                                                <img src="https://cdn11.bigcommerce.com/s-dea51z7cy/images/stencil/original/image-manager/product-default.png" align="left" alt="${hit.name}" />
+                                            </div>
+                                            <div class="ais-hit-title brand-name">${hit.brand_name}</div>
+                                            <div class="ais-hit-title product-title">${hit.name}</div>
+                                        </a>
+                                        <a
+                                            class="aa-ItemActionButton"
+                                            href="/login.php"
+                                        >
+                                            Login to purchase
+                                        </a>
+                                    `
+                                }
+                            }
+                        }
+                        
+                    },
+                },
+            }),
+
+            customDynamicWidgets({
+                container: document.querySelector('#dynamic-widgets'),
+                widgets: Object.values(widgets).map(({ widget, container }) => {
+                    return widget(container)
+                }),
+            }),
+
+            instantsearch.widgets.stats({
+                container: '#stats',
+                templates: {
+                    text: function (data) {
+                        if (data.nbHits > 0) {
+                            return (
+                                data.nbHits + ' results found '
+                            )
+                        }
+                    },
+                },
+            }),
+
+            customDynamicWidgets({
+                container: document.querySelector('#dynamic-widgets'),
+                widgets: Object.values(widgets).map(({ widget, container }) => widget(container)),
+            }),
+
+            customCurrentRefinements({
+                container: document.querySelector('#current-refinements'),
+            }),
+
+            clearRefinements({
+                container: '#clear-refinements',
+                templates: {
+                    resetLabel: 'Clear All',
+                },
+            }),
+
+            customSecondaryWidgets({
+                container: document.createElement('div'),
+                widgets: Object.values(secondaryWidgets).map(({ widget, container }) =>
+                    widget(container)
+                ),
+            }),
+
+            instantsearch.widgets.configure({
+                hitsPerPage: algoliaInstantsearchConfig.hitsPerPage,
+                distinct: algoliaInstantsearchConfig.isDistinct,
+                filters: instantsearchFilters.join(' AND '),
+            }),
+
+            customPopupFacets({
+                container: '#popupItems',
+                attribute: 'brand',
+                limit: 10,
+            }),
+        ])
+
+        if (algoliaInstantsearchConfig.sortOrders.length > 1) {
+            search.addWidgets([
+                instantsearch.widgets.sortBy({
+                    container: '.ais-sort-orders-container',
+                    items: algoliaInstantsearchConfig.sortOrders,
+                }),
+            ])
+        }
+    }
+
+    function attachInstantSearchDOMEvents() {
+        document.querySelector('.ais-SearchBox-reset').addEventListener('click', () => {
+            document.querySelector('.ais-right-panel .ais-SearchBox .ais-SearchBox-input').value =
+                ''
+        })
+    }
+
+
+
+ await shouldWeLoadFacets();
+    await shouldWeUpdateUiState();
+
+    search = instantsearch(initInstantsearch);
+    addInstantsearchWidgets();
+
+    search.start();
+
+    let rendered = false;
+    search.on('render', function () {
+        if (!rendered) {
+            const sortByContent = document.querySelector('.ais-sort-orders-container');
+            if (
+                sortByContent.innerHTML.includes('class="ais-SortBy"') &&
+                !sortByContent.innerHTML.includes('<span>Sort By</span>')
+            ) {
+                sortByContent.innerHTML = '';
+                sortByContent.innerHTML =
+                    '<span class="sort-by">Sort By</span>' + sortByContent.innerHTML;
+                rendered = true;
+            }
+        }
+        appendSidebarWidgetOpener();
+        addActiveClassToBrandOrPricePanel();
+    });
+
+    attachInstantSearchDOMEvents();
+    await insertHtmlBeforeSearchBox();
+
+})();
